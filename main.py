@@ -7,8 +7,8 @@ Requirements: aiohttp, lxml, python-telegram-bot==20.*, uvloop (optional)
 Place this file on your VPS as main.py and run: python3 main.py
 """
 
-import sys
-sys.modules["imghdr"] = __import__("imghdr_py")
+import types, sys
+sys.modules["imghdr"] = types.SimpleNamespace(what=lambda f: None)
 import asyncio
 import aiohttp
 import json
