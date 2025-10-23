@@ -7,6 +7,8 @@ Requirements: aiohttp, lxml, python-telegram-bot==20.*, uvloop (optional)
 Place this file on your VPS as main.py and run: python3 main.py
 """
 
+import sys
+sys.modules["imghdr"] = __import__("imghdr_py")
 import asyncio
 import aiohttp
 import json
@@ -18,6 +20,8 @@ import re
 import hashlib
 from typing import Optional, Dict, Any, List
 from urllib.parse import quote_plus, quote, unquote_plus, urlparse, parse_qs
+
+
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
