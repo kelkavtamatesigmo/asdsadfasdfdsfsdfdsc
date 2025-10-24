@@ -3,7 +3,7 @@
 """
 Main OSINT Telegram bot (VPS-optimized, Python 3.12).
 Contains: username search, VK history via Wayback, email OSINT, IP lookup (geo + RDAP + reverse DNS).
-Requirements: aiohttp, lxml, python-telegram-bot==20.*, uvloop (optional)
+Requirements: aiohttp, lxml, python-telegram-bot==20.7, uvloop (optional)
 Place this file on your VPS as main.py and run: python3 main.py
 """
 
@@ -21,7 +21,7 @@ import hashlib
 from typing import Optional, Dict, Any, List
 from urllib.parse import quote_plus, quote, unquote_plus, urlparse, parse_qs
 
-# Исправленный импорт для python-telegram-bot 20.x
+# Импорт для python-telegram-bot 20.x
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
@@ -1010,7 +1010,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(btn_callback))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), plain_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 
     app.add_handler(CommandHandler("whoami", whoami_cmd))
     app.add_handler(CommandHandler("list_auth", list_auth_cmd))
