@@ -1,4 +1,6 @@
+--only-binary=all
 urllib3
-python-telegram-bot==20.3
-aiohttp==3.8.4
-lxml==4.9.3
+setuptools>=70.0.0
+python-telegram-bot==21.7
+aiohttp==3.9.5
+lxml==5.2.1
