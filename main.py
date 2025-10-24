@@ -996,7 +996,7 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===================== Main (webhook via Flask) =====================
 from flask import Flask, request
 
-app = Flask(name)
+app = Flask(__name__)
 
 # Создаём PTB-приложение и регистрируем все хендлеры (как у тебя было)
 application = Application.builder().token(BOT_TOKEN).build()
@@ -1026,7 +1026,7 @@ def webhook():
 def index():
     return "✅ Telegram OSINT bot is alive", 200
 
-if name == "main":
+if __name__ == "__main__":
     # 1) Запускаем PTB
     asyncio.get_event_loop().run_until_complete(_startup())
 
