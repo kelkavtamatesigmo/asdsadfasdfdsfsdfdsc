@@ -21,11 +21,10 @@ import hashlib
 from typing import Optional, Dict, Any, List
 from urllib.parse import quote_plus, quote, unquote_plus, urlparse, parse_qs
 
-
-
+# Исправленный импорт для python-telegram-bot 20.x
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     ContextTypes,
     CommandHandler,
     MessageHandler,
@@ -1005,7 +1004,9 @@ def main():
         return
     # ensure auth file exists and owner set
     load_auth()
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    # Исправленная инициализация Application для версии 20.x
+    app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CallbackQueryHandler(btn_callback))
