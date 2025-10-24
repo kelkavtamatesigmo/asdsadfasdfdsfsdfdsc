@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Main OSINT Telegram bot (VPS-optimized, Python 3.12).
-Contains: username search, VK history via Wayback, email OSINT, IP lookup (geo + RDAP + reverse DNS).
-Requirements: aiohttp, lxml, python-telegram-bot==20.7, uvloop (optional)
-Place this file on your VPS as main.py and run: python3 main.py
+Main OSINT Telegram bot
 """
 
 import types, sys
@@ -25,11 +22,11 @@ from urllib.parse import quote_plus, quote, unquote_plus, urlparse, parse_qs
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application,
-    ContextTypes,
     CommandHandler,
     MessageHandler,
     CallbackQueryHandler,
     filters,
+    ContextTypes,
 )
 
 from lxml import html as lxml_html
@@ -43,16 +40,15 @@ except Exception:
 
 # ===================== Настройки =====================
 BOT_TOKEN = "7125428476:AAE2HdZkvmka_-fC-haCVvgGOeM7oSkQJtQ"
-OWNER_ID = 7405715334  # replace if needed
+OWNER_ID = 7405715334
 
 AUTH_FILE = "auth.json"
 HEADERS = {"User-Agent": "Public-OSINT-Bot/1.0 (+https://example.com)"}
-TG_CHUNK = 3900  # Telegram message chunk size
+TG_CHUNK = 3900
 
-# Performance / timeout settings tuned for weak VPS
 SEARCH_TIMEOUT = 7
 CONNECT_TIMEOUT = aiohttp.ClientTimeout(total=SEARCH_TIMEOUT)
-MAX_CONCURRENCY = 6  # limit parallel requests to reduce load
+MAX_CONCURRENCY = 6
 
 # ===================== Логирование =====================
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -94,7 +90,7 @@ def is_allowed(user_id: int, auth: Dict[str, Any]) -> bool:
         return True
     return user_id in auth.get("allowed_users", [])
 
-# ===================== HTTP helpers (optimized) =====================
+# ===================== HTTP helpers =====================
 async def fetch_head(session: aiohttp.ClientSession, url: str, timeout: int = 4) -> Dict[str, Any]:
     try:
         async with session.head(url, timeout=timeout, headers=HEADERS, allow_redirects=True) as resp:
@@ -129,7 +125,7 @@ async def fetch_json(session: aiohttp.ClientSession, url: str, params: dict = No
     except Exception as e:
         return {"__error": str(e), "url": url}
 
-# ===================== Site templates (username checks) =====================
+# ===================== Site templates =====================
 SITE_TEMPLATES = [
     ("GitHub", "https://github.com/{}", False),
     ("GitLab", "https://gitlab.com/{}", False),
@@ -175,7 +171,7 @@ async def wayback_cdx_lookup(session: aiohttp.ClientSession, target: str, limit:
     cdx = f"https://web.archive.org/cdx/search/cdx?url={quote_plus(target)}&output=json&fl=timestamp,original,statuscode&filter=statuscode:200&collapse=digest&limit={limit}"
     return await fetch_json(session, cdx, timeout=SEARCH_TIMEOUT)
 
-# ===================== DuckDuckGo HTML search (lxml parser) =====================
+# ===================== DuckDuckGo HTML search =====================
 DUCK_HTML = "https://html.duckduckgo.com/html/"
 
 def _decode_uddg(href: str) -> str:
@@ -509,7 +505,7 @@ async def vk_history_aggregate(raw_identifier: str) -> str:
 
     return "\n".join(lines)
 
-# ===================== Username search (parallel, limited concurrency) =====================
+# ===================== Username search =====================
 async def search_username_all(username: str, session: aiohttp.ClientSession, timeout: int = 6) -> List[Dict[str, Any]]:
     tasks = []
     for site, tmpl, quote_flag in SITE_TEMPLATES:
@@ -533,7 +529,7 @@ async def search_username_all(username: str, session: aiohttp.ClientSession, tim
     return found
 
 async def aggregate_user_search(username: str) -> str:
-    header = ("Отчёт поиска по нику")
+    header = "Отчёт поиска по нику"
     async with aiohttp.ClientSession(timeout=CONNECT_TIMEOUT, headers=HEADERS) as session:
         found = await search_username_all(username, session)
         lines = [header]
@@ -797,7 +793,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await update.message.chat.send_action("typing")
         res = await aggregate_user_search(text)
-        for chunk in chunk_text(res):
+        for chunk in [res[i:i+TG_CHUNK] for i in range(0, len(res), TG_CHUNK)]:
             await update.message.reply_text(chunk)
         return
 
@@ -808,7 +804,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         await update.message.chat.send_action("typing")
         out = await aggregate_email_search(text)
-        for chunk in chunk_text(out):
+        for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
         return
 
@@ -816,7 +812,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         pending_actions.pop(cid, None)
         await update.message.chat.send_action("typing")
         out = await vk_history_aggregate(text)
-        for chunk in chunk_text(out):
+        for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
         return
 
@@ -868,7 +864,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parts += ["", f"🔁 Reverse DNS: ошибка ({rdns})"]
         parts.append("")
         out = "\n".join(parts)
-        for chunk in chunk_text(out):
+        for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
         return
 
@@ -1005,22 +1001,24 @@ def main():
     # ensure auth file exists and owner set
     load_auth()
     
-    # Исправленная инициализация Application для версии 20.x
-    app = Application.builder().token(BOT_TOKEN).build()
+    # Создаем Application
+    application = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CallbackQueryHandler(btn_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
-
-    app.add_handler(CommandHandler("whoami", whoami_cmd))
-    app.add_handler(CommandHandler("list_auth", list_auth_cmd))
-    app.add_handler(CommandHandler("allow_add", allow_add_cmd))
-    app.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
-    app.add_handler(CommandHandler("admin_add", admin_add_cmd))
-    app.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
+    # Добавляем обработчики
+    application.add_handler(CommandHandler("start", start_cmd))
+    application.add_handler(CommandHandler("whoami", whoami_cmd))
+    application.add_handler(CommandHandler("list_auth", list_auth_cmd))
+    application.add_handler(CommandHandler("allow_add", allow_add_cmd))
+    application.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
+    application.add_handler(CommandHandler("admin_add", admin_add_cmd))
+    application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
+    application.add_handler(CallbackQueryHandler(btn_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 
     logger.info("Bot starting...")
-    app.run_polling()
+    
+    # Запускаем бота
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
