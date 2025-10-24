@@ -3,7 +3,7 @@
 """
 Main OSINT Telegram bot
 """
-
+from flask import Flask, request
 import types, sys
 sys.modules["imghdr"] = types.SimpleNamespace(what=lambda f: None)
 import asyncio
@@ -993,14 +993,13 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Этот пользователь не является админом.")
 
-# ===================== Main =====================
+# ===================== Main (webhook via Flask) =====================
 from flask import Flask, request
 
-app = Flask(__name__)
+app = Flask(name)
 
+# Создаём PTB-приложение и регистрируем все хендлеры (как у тебя было)
 application = Application.builder().token(BOT_TOKEN).build()
-
-# Регистрация обработчиков — идентично твоему коду
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("whoami", whoami_cmd))
 application.add_handler(CommandHandler("list_auth", list_auth_cmd))
@@ -1011,23 +1010,34 @@ application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
 application.add_handler(CallbackQueryHandler(btn_callback))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 
-# === Flask маршрут для webhook ===
+# Инициализация PTB один раз при старте
+async def _startup():
+    await application.initialize()
+    await application.start()
+
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.run(application.process_update(update))
+    # Получаем апдейт от Telegram и передаём его PTB
+    upd = Update.de_json(request.get_json(force=True), application.bot)
+    asyncio.get_event_loop().create_task(application.process_update(upd))
     return "ok", 200
 
 @app.route("/")
 def index():
     return "✅ Telegram OSINT bot is alive", 200
 
-# === Установка webhook при запуске ===
 if name == "main":
-    WEBHOOK_URL = "https://nimble-muffin-d16c22.netlify.app/webhook"  # замени на свой Netlify URL
-    import requests
-    r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
-    print("Webhook set:", r.json())
+    # 1) Запускаем PTB
+    asyncio.get_event_loop().run_until_complete(_startup())
 
-    # Flask вместо polling
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    # 2) Регистрируем вебхук на твой Render-адрес
+    WEBHOOK_URL = "https://asdsadfasdfdsfsdfdsc.onrender.com/webhook"  # замени!
+    import requests
+    try:
+        resp = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook", params={"url": WEBHOOK_URL}, timeout=10)
+        print("Webhook set:", resp.json())
+    except Exception as e:
+        print("Webhook set error:", e)
+
+    # 3) Стартуем Flask-сервер (Render слушает этот порт)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
