@@ -996,7 +996,7 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===================== Main =====================
 from flask import Flask, request
 
-app = Flask(name)
+app = Flask(__name__)
 
 application = Application.builder().token(BOT_TOKEN).build()
 
