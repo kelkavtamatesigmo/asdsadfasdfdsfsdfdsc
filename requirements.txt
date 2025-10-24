@@ -4,3 +4,4 @@ setuptools>=70.0.0
 python-telegram-bot==21.7
 aiohttp==3.9.5
 lxml==5.2.1
+Flask

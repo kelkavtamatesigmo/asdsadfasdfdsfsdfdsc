@@ -994,31 +994,40 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Этот пользователь не является админом.")
 
 # ===================== Main =====================
-def main():
-    if BOT_TOKEN == "REPLACE_WITH_YOUR_TOKEN" or not BOT_TOKEN.strip():
-        logger.error("Поставь BOT_TOKEN в коде перед запуском.")
-        return
-    # ensure auth file exists and owner set
-    load_auth()
-    
-    # Создаем Application
-    application = Application.builder().token(BOT_TOKEN).build()
+from flask import Flask, request
 
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start_cmd))
-    application.add_handler(CommandHandler("whoami", whoami_cmd))
-    application.add_handler(CommandHandler("list_auth", list_auth_cmd))
-    application.add_handler(CommandHandler("allow_add", allow_add_cmd))
-    application.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
-    application.add_handler(CommandHandler("admin_add", admin_add_cmd))
-    application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
-    application.add_handler(CallbackQueryHandler(btn_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
+app = Flask(name)
 
-    logger.info("Bot starting...")
-    
-    # Запускаем бота
-    application.run_polling()
+application = Application.builder().token(BOT_TOKEN).build()
 
-if __name__ == "__main__":
-    main()
+# Регистрация обработчиков — идентично твоему коду
+application.add_handler(CommandHandler("start", start_cmd))
+application.add_handler(CommandHandler("whoami", whoami_cmd))
+application.add_handler(CommandHandler("list_auth", list_auth_cmd))
+application.add_handler(CommandHandler("allow_add", allow_add_cmd))
+application.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
+application.add_handler(CommandHandler("admin_add", admin_add_cmd))
+application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
+application.add_handler(CallbackQueryHandler(btn_callback))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
+
+# === Flask маршрут для webhook ===
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    asyncio.run(application.process_update(update))
+    return "ok", 200
+
+@app.route("/")
+def index():
+    return "✅ Telegram OSINT bot is alive", 200
+
+# === Установка webhook при запуске ===
+if name == "main":
+    WEBHOOK_URL = "https://nimble-muffin-d16c22.netlify.app/webhook"  # замени на свой Netlify URL
+    import requests
+    r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
+    print("Webhook set:", r.json())
+
+    # Flask вместо polling
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
