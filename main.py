@@ -1014,7 +1014,6 @@ application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_me
 async def _startup():
     await application.initialize()
     await application.start()
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -1023,14 +1022,21 @@ def webhook():
         if not data:
             return "no data", 400
 
-        # Преобразуем JSON в Update
         upd = Update.de_json(data, application.bot)
 
-        # Исполняем в отдельном event loop, безопасно для Render
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(application.process_update(upd))
-        loop.close()
+        # Безопасный запуск PTB апдейта
+        async def process():
+            try:
+                await application.process_update(upd)
+            except Exception as e:
+                print("❌ Ошибка внутри PTB:", e)
+
+        # Один глобальный event loop, не пересоздаём каждый раз
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.create_task(process())
 
         return "ok", 200
 
@@ -1039,6 +1045,7 @@ def webhook():
         import traceback
         traceback.print_exc()
         return str(e), 500
+
 @app.route("/")
 def index():
     return "✅ Telegram OSINT bot is alive", 200
