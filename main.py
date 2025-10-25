@@ -1012,11 +1012,12 @@ async def init_bot():
     try:
         await application.initialize()
         await application.start()
+        await application.updater.start_polling()  # помогает инициализировать loop
         print("🟩 Bot started and ready for webhook updates")
     except Exception as e:
         print("❌ Ошибка при запуске бота:", e)
 
-# Запускаем инициализацию бота в фоне
+# Запускаем PTB в фоне
 loop.create_task(init_bot())
 
 
@@ -1030,12 +1031,9 @@ def webhook():
             return "no data", 400
 
         update = Update.de_json(data, application.bot)
-
-        # Обработка апдейта безопасно из другого потока
         asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
         return "ok", 200
-
     except Exception as e:
         print("❌ Ошибка в webhook:", e)
         import traceback
@@ -1051,7 +1049,7 @@ def index():
 
 # === Точка входа ===
 if __name__ == "__main__":
-    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
+    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
     try:
         r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
         print("Webhook set:", r.json())
