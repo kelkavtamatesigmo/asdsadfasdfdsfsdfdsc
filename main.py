@@ -4,6 +4,7 @@
 Main OSINT Telegram bot
 """
 import requests
+import threading
 from flask import Flask, request
 import types, sys
 sys.modules["imghdr"] = types.SimpleNamespace(what=lambda f: None)
@@ -994,9 +995,17 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("Этот пользователь не является админом.")
 
-# ===================== Main (webhook via Flask) =====================
+# ===================== Main (polling + Flask keepalive) =====================
 
-app = Flask(__name__)
+
+
+# === Flask-заглушка для аптайма ===
+app = Flask(name)
+
+@app.route("/")
+def index():
+    return "✅ Telegram OSINT bot is alive (polling mode)", 200
+
 
 # === Создаём Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
@@ -1005,68 +1014,23 @@ application.add_handler(CommandHandler("whoami", whoami_cmd))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 application.add_handler(CallbackQueryHandler(btn_callback))
 
-# === Создаём единый event loop ===
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
 
-# === Асинхронный запуск PTB ===
-async def init_bot():
-    try:
-        await application.initialize()
-        await application.start()
-        print("🟢 Bot started and ready for webhook updates")
-    except Exception as e:
-        print("❌ Ошибка при запуске бота:", e)
-
-loop.create_task(init_bot())
-
-# === Flask route для Telegram webhook ===
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    try:
-        data = request.get_json(force=True)
-        print("🔥 RAW update:", data)
-
-        if not data:
-            return "no data", 400
-
-        # Преобразуем JSON в Update
-        upd = Update.de_json(data, application.bot)
-
-        # === Безопасная обработка апдейта ===
-        # создаём отдельный event loop на каждый запрос
-        # (это стабильно работает на Render)
-        try:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(application.process_update(upd))
-        finally:
-            loop.close()
-
-        return "ok", 200
-
-    except Exception as e:
-        print("❌ Ошибка в webhook:", e)
-        import traceback
-        traceback.print_exc()
-        return str(e), 500
+# === Функция запуска Telegram-бота ===
+def run_bot():
+    print("🤖 Bot started in polling mode (no webhook)")
+    application.run_polling(drop_pending_updates=True)
 
 
-# === Проверочная страница ===
-@app.route("/")
-def index():
-    return "✅ Telegram OSINT bot is alive", 200
+# === Функция запуска Flask-заглушки ===
+def run_flask():
+    print("🌐 Flask keepalive running on Render")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
 
 
 # === Точка входа ===
 if __name__ == "__main__":
-    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
+    # Flask-заглушку запускаем в отдельном потоке
+    threading.Thread(target=run_flask, daemon=True).start()
 
-    try:
-        r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
-        print("Webhook set:", r.json())
-    except Exception as e:
-        print("Ошибка установки вебхука:", e)
-
-    print("🚀 Starting Flask app...")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    # А в основном потоке запускаем polling
+    run_bot()
