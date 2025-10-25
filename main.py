@@ -1009,11 +1009,16 @@ asyncio.set_event_loop(loop)
 
 # === Асинхронный запуск PTB ===
 async def init_bot():
-    await application.initialize()
-    await application.start()
-    print("✅ Bot started and ready for webhook updates")
+    try:
+        await application.initialize()
+        await application.start()
+        print("🟩 Bot started and ready for webhook updates")
+    except Exception as e:
+        print("❌ Ошибка при запуске бота:", e)
 
+# Запускаем инициализацию бота в фоне
 loop.create_task(init_bot())
+
 
 # === Flask route для Telegram webhook ===
 @app.route("/webhook", methods=["POST"])
@@ -1025,7 +1030,10 @@ def webhook():
             return "no data", 400
 
         update = Update.de_json(data, application.bot)
+
+        # Обработка апдейта безопасно из другого потока
         asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
+
         return "ok", 200
 
     except Exception as e:
@@ -1044,7 +1052,6 @@ def index():
 # === Точка входа ===
 if __name__ == "__main__":
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
-
     try:
         r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
         print("Webhook set:", r.json())
