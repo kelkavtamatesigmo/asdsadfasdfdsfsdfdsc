@@ -1017,19 +1017,28 @@ async def _startup():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-    print("🔥 RAW update:", data)
-    if not data:
-        print("⚠️ Пустой апдейт — Telegram не шлёт JSON")
-        return "no data", 400
     try:
-        upd = Update.de_json(data, application.bot)
-        asyncio.get_event_loop().create_task(application.process_update(upd))
-        return "ok", 200
-    except Exception as e:
-        print("❌ Ошибка в обработке:", e)
-        return str(e), 500
+        data = request.get_json(force=True)
+        print("🔥 RAW update:", data)
+        if not data:
+            return "no data", 400
 
+        # Преобразуем JSON в Update
+        upd = Update.de_json(data, application.bot)
+
+        # Исполняем в отдельном event loop, безопасно для Render
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(application.process_update(upd))
+        loop.close()
+
+        return "ok", 200
+
+    except Exception as e:
+        print("❌ Ошибка в webhook:", e)
+        import traceback
+        traceback.print_exc()
+        return str(e), 500
 @app.route("/")
 def index():
     return "✅ Telegram OSINT bot is alive", 200
