@@ -3,7 +3,7 @@
 """
 Main OSINT Telegram bot
 """
-
+import requests
 from flask import Flask, request
 import types, sys
 sys.modules["imghdr"] = types.SimpleNamespace(what=lambda f: None)
