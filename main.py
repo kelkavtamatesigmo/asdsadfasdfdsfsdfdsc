@@ -1000,7 +1000,7 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # === Flask-заглушка для аптайма ===
-app = Flask(name)
+app = Flask(__name__)
 
 @app.route("/")
 def index():
