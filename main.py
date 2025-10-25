@@ -1053,7 +1053,7 @@ def index():
 
 # === Точка входа ===
 if __name__ == "__main__":
-    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
+    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
     try:
         r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
         print("Webhook set:", r.json())
