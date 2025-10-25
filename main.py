@@ -1017,10 +1017,18 @@ async def _startup():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    # Получаем апдейт от Telegram и передаём его PTB
-    upd = Update.de_json(request.get_json(force=True), application.bot)
-    asyncio.get_event_loop().create_task(application.process_update(upd))
-    return "ok", 200
+    data = request.get_json(force=True)
+    print("🔥 RAW update:", data)
+    if not data:
+        print("⚠️ Пустой апдейт — Telegram не шлёт JSON")
+        return "no data", 400
+    try:
+        upd = Update.de_json(data, application.bot)
+        asyncio.get_event_loop().create_task(application.process_update(upd))
+        return "ok", 200
+    except Exception as e:
+        print("❌ Ошибка в обработке:", e)
+        return str(e), 500
 
 @app.route("/")
 def index():
