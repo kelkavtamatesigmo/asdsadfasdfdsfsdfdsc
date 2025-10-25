@@ -997,31 +997,27 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ===================== Main (webhook via Flask) =====================
 # === Создаём Telegram Application ===
 app = Flask(__name__)
+
 application = Application.builder().token(BOT_TOKEN).build()
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("whoami", whoami_cmd))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 application.add_handler(CallbackQueryHandler(btn_callback))
 
-# === Создаём единый event loop ===
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
+# === Создаём event loop ===
+loop = asyncio.get_event_loop()
 
 # === Асинхронный запуск PTB ===
-async def init_bot():
-    try:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()  # помогает инициализировать loop
-        print("🟩 Bot started and ready for webhook updates")
-    except Exception as e:
-        print("❌ Ошибка при запуске бота:", e)
+async def start_bot():
+    await application.initialize()
+    await application.start()
+    print("🟩 Bot started and ready for webhook updates")
 
-# Запускаем PTB в фоне
-loop.create_task(init_bot())
+# Стартуем сразу (без create_task)
+loop.run_until_complete(start_bot())
 
 
-# === Flask route для Telegram webhook ===
+# === Flask route ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -1031,9 +1027,9 @@ def webhook():
             return "no data", 400
 
         update = Update.de_json(data, application.bot)
-        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
-
+        loop.create_task(application.process_update(update))  # ✅ безопасно и сразу
         return "ok", 200
+
     except Exception as e:
         print("❌ Ошибка в webhook:", e)
         import traceback
@@ -1041,13 +1037,11 @@ def webhook():
         return str(e), 500
 
 
-# === Проверочная страница ===
 @app.route("/")
 def index():
     return "✅ Telegram OSINT bot is alive", 200
 
 
-# === Точка входа ===
 if __name__ == "__main__":
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
     try:
@@ -1056,5 +1050,4 @@ if __name__ == "__main__":
     except Exception as e:
         print("Ошибка установки вебхука:", e)
 
-    print("🚀 Starting Flask app...")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
