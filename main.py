@@ -1023,19 +1023,24 @@ def webhook():
     try:
         data = request.get_json(force=True)
         print("🔥 RAW update:", data)
+
         if not data:
             return "no data", 400
 
         update = Update.de_json(data, application.bot)
-        loop.create_task(application.process_update(update))  # ✅ безопасно и сразу
-        return "ok", 200
 
+        # безопасно обрабатываем апдейт в asyncio loop
+        loop.call_soon_threadsafe(
+            asyncio.create_task,
+            application.process_update(update)
+        )
+
+        return "ok", 200
     except Exception as e:
         print("❌ Ошибка в webhook:", e)
         import traceback
         traceback.print_exc()
         return str(e), 500
-
 
 @app.route("/")
 def index():
