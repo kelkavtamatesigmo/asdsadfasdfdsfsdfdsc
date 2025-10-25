@@ -1040,7 +1040,6 @@ def webhook():
 def index():
     return "✅ Telegram OSINT bot is alive", 200
 
-
 if __name__ == "__main__":
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
     try:
