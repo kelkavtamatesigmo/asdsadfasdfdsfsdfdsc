@@ -1029,10 +1029,9 @@ def webhook():
 
         update = Update.de_json(data, application.bot)
 
-        # безопасно обрабатываем апдейт в asyncio loop
+        # Корректно передаём задачу в активный event loop
         loop.call_soon_threadsafe(
-            asyncio.create_task,
-            application.process_update(update)
+            lambda: asyncio.create_task(application.process_update(update))
         )
 
         return "ok", 200
@@ -1041,7 +1040,6 @@ def webhook():
         import traceback
         traceback.print_exc()
         return str(e), 500
-
 @app.route("/")
 def index():
     return "✅ Telegram OSINT bot is alive", 200
