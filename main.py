@@ -1030,14 +1030,21 @@ def webhook():
         if not data:
             return "no data", 400
 
-        update = Update.de_json(data, application.bot)
+        # Преобразуем JSON в Update
+        upd = Update.de_json(data, application.bot)
 
-        # Отправляем задачу в event loop безопасно
-        loop.call_soon_threadsafe(
-            lambda: asyncio.create_task(application.process_update(update))
-        )
+        # === Безопасная обработка апдейта ===
+        # создаём отдельный event loop на каждый запрос
+        # (это стабильно работает на Render)
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(application.process_update(upd))
+        finally:
+            loop.close()
 
         return "ok", 200
+
     except Exception as e:
         print("❌ Ошибка в webhook:", e)
         import traceback
@@ -1054,6 +1061,7 @@ def index():
 # === Точка входа ===
 if __name__ == "__main__":
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
+
     try:
         r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
         print("Webhook set:", r.json())
@@ -1061,4 +1069,4 @@ if __name__ == "__main__":
         print("Ошибка установки вебхука:", e)
 
     print("🚀 Starting Flask app...")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
