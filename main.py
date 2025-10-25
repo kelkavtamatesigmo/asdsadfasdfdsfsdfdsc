@@ -3,6 +3,7 @@
 """
 Main OSINT Telegram bot
 """
+
 from flask import Flask, request
 import types, sys
 sys.modules["imghdr"] = types.SimpleNamespace(what=lambda f: None)
@@ -994,26 +995,26 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Этот пользователь не является админом.")
 
 # ===================== Main (webhook via Flask) =====================
-from flask import Flask, request
-
-app = Flask(__name__)
-
-# Создаём PTB-приложение и регистрируем все хендлеры (как у тебя было)
+# === Создаём Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("whoami", whoami_cmd))
-application.add_handler(CommandHandler("list_auth", list_auth_cmd))
-application.add_handler(CommandHandler("allow_add", allow_add_cmd))
-application.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
-application.add_handler(CommandHandler("admin_add", admin_add_cmd))
-application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
-application.add_handler(CallbackQueryHandler(btn_callback))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
+application.add_handler(CallbackQueryHandler(btn_callback))
 
-# Инициализация PTB один раз при старте
-async def _startup():
+# === Создаём единый event loop ===
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
+# === Асинхронный запуск PTB ===
+async def init_bot():
     await application.initialize()
     await application.start()
+    print("✅ Bot started and ready for webhook updates")
+
+loop.create_task(init_bot())
+
+# === Flask route для Telegram webhook ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -1022,46 +1023,30 @@ def webhook():
         if not data:
             return "no data", 400
 
-        upd = Update.de_json(data, application.bot)
-
-        # Безопасный запуск PTB апдейта
-        async def process():
-            try:
-                await application.process_update(upd)
-            except Exception as e:
-                print("❌ Ошибка внутри PTB:", e)
-
-        # Один глобальный event loop, не пересоздаём каждый раз
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        loop.create_task(process())
+        update = Update.de_json(data, application.bot)
+        # Запускаем PTB обработку безопасно из другого потока
+        asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
         return "ok", 200
-
     except Exception as e:
         print("❌ Ошибка в webhook:", e)
         import traceback
         traceback.print_exc()
         return str(e), 500
 
+
 @app.route("/")
 def index():
     return "✅ Telegram OSINT bot is alive", 200
 
-if __name__ == "__main__":
-    # 1) Запускаем PTB
-    asyncio.get_event_loop().run_until_complete(_startup())
 
-    # 2) Регистрируем вебхук на твой Render-адрес
-    WEBHOOK_URL = "https://asdsadfasdfdsfsdfdsc.onrender.com/webhook"  # замени!
-    import requests
+if name == "main":
+    WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
     try:
-        resp = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook", params={"url": WEBHOOK_URL}, timeout=10)
-        print("Webhook set:", resp.json())
+        r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
+        print("Webhook set:", r.json())
     except Exception as e:
-        print("Webhook set error:", e)
+        print("Ошибка установки вебхука:", e)
 
-    # 3) Стартуем Flask-сервер (Render слушает этот порт)
+    # Flask слушает Render-порт
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
