@@ -996,6 +996,7 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===================== Main (webhook via Flask) =====================
 # === Создаём Telegram Application ===
+app = Flask(__name__)
 application = Application.builder().token(BOT_TOKEN).build()
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("whoami", whoami_cmd))
@@ -1040,7 +1041,7 @@ def index():
     return "✅ Telegram OSINT bot is alive", 200
 
 
-if name == "main":
+if __name__ == "__main__":
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
     try:
         r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
