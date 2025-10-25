@@ -1015,7 +1015,7 @@ async def init_bot():
 
 loop.create_task(init_bot())
 
-# === Flask route для Telegram webhook ===
+# === Flask webhook route ===
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
@@ -1025,7 +1025,7 @@ def webhook():
             return "no data", 400
 
         update = Update.de_json(data, application.bot)
-        # Запускаем PTB обработку безопасно из другого потока
+        # Вместо run_coroutine_threadsafe
         asyncio.run_coroutine_threadsafe(application.process_update(update), loop)
 
         return "ok", 200
@@ -1036,17 +1036,15 @@ def webhook():
         return str(e), 500
 
 
-@app.route("/")
-def index():
-    return "✅ Telegram OSINT bot is alive", 200
-
-if __name__ == "__main__":
+if name == "main":
     WEBHOOK_URL = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'https://asdsadfasdfdsfsdfdsc.onrender.com')}/webhook"
+
+    # Устанавливаем вебхук
     try:
         r = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={WEBHOOK_URL}")
         print("Webhook set:", r.json())
     except Exception as e:
         print("Ошибка установки вебхука:", e)
 
-    # Flask слушает Render-порт
+    # Запуск Flask
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
