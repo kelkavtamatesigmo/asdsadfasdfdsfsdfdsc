@@ -773,7 +773,7 @@ async def is_allowed_user(user_id: int) -> bool:
 async def btn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
