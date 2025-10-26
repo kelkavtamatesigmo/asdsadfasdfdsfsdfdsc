@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Main OSINT Telegram bot (Render-safe, polling + Flask keepalive)
-This file consolidates the user's original functionality with minimal fixes:
-- Persist auth.json in /var/data/auth.json (Render persistent disk)
-- Register admin commands: /list_auth, /allow_add, /allow_remove, /admin_add, /admin_remove
-- Keep original logic/structure/texts intact otherwise
+Main OSINT Telegram bot
 """
 import requests
 import threading
@@ -34,6 +30,7 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
+
 from lxml import html as lxml_html
 
 # Try to use uvloop for better performance (optional)
@@ -47,8 +44,7 @@ except Exception:
 BOT_TOKEN = "7125428476:AAE2HdZkvmka_-fC-haCVvgGOeM7oSkQJtQ"
 OWNER_ID = 7405715334
 
-# Render.com persistent path
-AUTH_FILE = os.environ.get("AUTH_FILE", "/var/data/auth.json")
+AUTH_FILE = "auth.json"
 HEADERS = {"User-Agent": "Public-OSINT-Bot/1.0 (+https://example.com)"}
 TG_CHUNK = 3900
 
@@ -60,14 +56,8 @@ MAX_CONCURRENCY = 6
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# ===================== Файловая auth логика (Render-safe) =====================
+# ===================== Файловая auth логика =====================
 def load_auth() -> Dict[str, Any]:
-    # Ensure directory exists (Render persistent disk)
-    try:
-        os.makedirs(os.path.dirname(AUTH_FILE), exist_ok=True)
-    except Exception:
-        pass
-
     if os.path.exists(AUTH_FILE):
         try:
             with open(AUTH_FILE, "r", encoding="utf-8") as f:
@@ -86,12 +76,8 @@ def load_auth() -> Dict[str, Any]:
 
 def save_auth(data: Dict[str, Any]) -> None:
     try:
-        os.makedirs(os.path.dirname(AUTH_FILE), exist_ok=True)
-        tmp_file = AUTH_FILE + ".tmp"
-        with open(tmp_file, "w", encoding="utf-8") as f:
+        with open(AUTH_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_file, AUTH_FILE)
-        logger.info(f"Auth data saved to {AUTH_FILE}")
     except Exception as e:
         logger.exception("Failed to save auth: %s", e)
 
@@ -807,11 +793,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(text) == 0:
             await update.message.reply_text("Пустой ник — отправь ник/имя.")
             return
-        # сохраним исходную логику отправки "typing"
-        try:
-            await update.message.chat.send_action("typing")
-        except Exception:
-            pass
+        await update.message.chat.send_action("typing")
         res = await aggregate_user_search(text)
         for chunk in [res[i:i+TG_CHUNK] for i in range(0, len(res), TG_CHUNK)]:
             await update.message.reply_text(chunk)
@@ -822,10 +804,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not looks_like_email(text):
             await update.message.reply_text("Похоже, это не email. Отправь корректный адрес (пример: name@example.com).")
             return
-        try:
-            await update.message.chat.send_action("typing")
-        except Exception:
-            pass
+        await update.message.chat.send_action("typing")
         out = await aggregate_email_search(text)
         for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
@@ -833,10 +812,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == "vk":
         pending_actions.pop(cid, None)
-        try:
-            await update.message.chat.send_action("typing")
-        except Exception:
-            pass
+        await update.message.chat.send_action("typing")
         out = await vk_history_aggregate(text)
         for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
@@ -848,10 +824,7 @@ async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("Похоже, это не IP. Отправь корректный IPv4/IPv6 (пример: 8.8.8.8).")
             return
         ip = text
-        try:
-            await update.message.chat.send_action("typing")
-        except Exception:
-            pass
+        await update.message.chat.send_action("typing")
         async with aiohttp.ClientSession(timeout=CONNECT_TIMEOUT, headers=HEADERS) as session:
             geo_task = asyncio.create_task(fetch_json(session, f"http://ip-api.com/json/{ip}"))
             rdap_task = asyncio.create_task(fetch_json(session, f"https://rdap.org/ip/{ip}"))
@@ -1024,6 +997,8 @@ async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ===================== Main (polling + Flask keepalive) =====================
 
+
+
 # === Flask-заглушка для аптайма ===
 app = Flask(__name__)
 
@@ -1031,28 +1006,19 @@ app = Flask(__name__)
 def index():
     return "✅ Telegram OSINT bot is alive (polling mode)", 200
 
+
 # === Создаём Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("whoami", whoami_cmd))
-
-# зарегистрируем команды авторизации
-application.add_handler(CommandHandler("list_auth", list_auth_cmd))
-application.add_handler(CommandHandler("allow_add", allow_add_cmd))
-application.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
-application.add_handler(CommandHandler("admin_add", admin_add_cmd))
-application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
-
-# основной UX
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 application.add_handler(CallbackQueryHandler(btn_callback))
+
 
 # === Функция запуска Telegram-бота ===
 def run_bot():
     print("🤖 Bot started in polling mode (no webhook)")
     application.run_polling(drop_pending_updates=True)
 
-# === Запуск: polling в отдельном потоке + Flask ===
-if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+
+# === Функция запуска Flask-заглушки ===
