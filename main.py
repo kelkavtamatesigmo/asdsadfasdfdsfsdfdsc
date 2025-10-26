@@ -71,7 +71,7 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 drive_service = build("drive", "v3", credentials=credentials)
 
-def load_auth() -> Dict[str, Any]:
+async def load_auth() -> Dict[str, Any]:
     try:
         request = drive_service.files().get_media(fileId=FILE_ID)
         fh = io.BytesIO()
@@ -92,7 +92,7 @@ def load_auth() -> Dict[str, Any]:
     save_auth(data)
     return data
 
-def save_auth(data: Dict[str, Any]) -> None:
+async def save_auth(data: Dict[str, Any]) -> None:
     try:
         tmp_path = "/tmp/auth.json"
         with open(tmp_path, "w", encoding="utf-8") as f:
@@ -104,13 +104,13 @@ def save_auth(data: Dict[str, Any]) -> None:
         logger.exception("Ошибка при сохранении auth.json на Google Drive: %s", e)
 
 
-def is_owner(user_id: int, auth: Dict[str, Any]) -> bool:
+async def is_owner(user_id: int, auth: Dict[str, Any]) -> bool:
     return auth.get("owner") is not None and user_id == auth.get("owner")
 
-def is_admin(user_id: int, auth: Dict[str, Any]) -> bool:
+async def is_admin(user_id: int, auth: Dict[str, Any]) -> bool:
     return user_id in auth.get("admins", []) or is_owner(user_id, auth)
 
-def is_allowed(user_id: int, auth: Dict[str, Any]) -> bool:
+async def is_allowed(user_id: int, auth: Dict[str, Any]) -> bool:
     if is_owner(user_id, auth) or is_admin(user_id, auth):
         return True
     return user_id in auth.get("allowed_users", [])
@@ -180,7 +180,7 @@ SITE_TEMPLATES = [
 
 # ===================== VK identifier utils =====================
 VK_URL_RE = re.compile(r"(?:https?://)?(?:www\.)?vk\.com/(id\d+|[A-Za-z0-9_.]+)(?:[/?#].*)?$", re.IGNORECASE)
-def normalize_vk_identifier(s: str) -> Optional[str]:
+async def normalize_vk_identifier(s: str) -> Optional[str]:
     s = s.strip()
     m = VK_URL_RE.match(s)
     if m:
@@ -199,7 +199,7 @@ async def wayback_cdx_lookup(session: aiohttp.ClientSession, target: str, limit:
 # ===================== DuckDuckGo HTML search =====================
 DUCK_HTML = "https://html.duckduckgo.com/html/"
 
-def _decode_uddg(href: str) -> str:
+async def _decode_uddg(href: str) -> str:
     try:
         qs = parse_qs(urlparse(href).query)
         if "uddg" in qs and len(qs["uddg"]) > 0:
@@ -238,10 +238,10 @@ async def ddg_search(session: aiohttp.ClientSession, query: str, max_results: in
 
 # ===================== Email OSINT =====================
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
-def looks_like_email(s: str) -> bool:
+async def looks_like_email(s: str) -> bool:
     return bool(EMAIL_RE.match(s.strip()))
 
-def email_domain(email: str) -> Optional[str]:
+async def email_domain(email: str) -> Optional[str]:
     try:
         return email.split("@", 1)[1].lower().strip()
     except Exception:
@@ -280,7 +280,7 @@ async def email_pastes(session: aiohttp.ClientSession, email: str, max_results: 
     q = f"\"{email}\" pastebin OR ghostbin OR hastebin OR throwbin OR dpaste OR paste2"
     return await ddg_search(session, q, max_results=max_results)
 
-def compact_details(d: Dict[str, Any], keys: List[str], prefix: str = "") -> List[str]:
+async def compact_details(d: Dict[str, Any], keys: List[str], prefix: str = "") -> List[str]:
     lines = []
     for k in keys:
         v = d.get(k)
@@ -443,7 +443,7 @@ async def vk_history_aggregate(raw_identifier: str) -> str:
                 cnt = len(rows)
                 first_ts = rows[0][0]
                 last_ts = rows[-1][0]
-                def ts_to_date(ts: str) -> str:
+                async def ts_to_date(ts: str) -> str:
                     try:
                         dt = datetime.datetime.strptime(ts, "%Y%m%d%H%M%S")
                         return dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -588,7 +588,7 @@ async def ip_rdap_raw(ip: str) -> dict:
 
 async def reverse_dns(ip: str) -> dict:
     loop = asyncio.get_event_loop()
-    def _rdns():
+    async def _rdns():
         try:
             host, aliases, _ = socket.gethostbyaddr(ip)
             return {"host": host, "aliases": aliases}
@@ -596,7 +596,7 @@ async def reverse_dns(ip: str) -> dict:
             return {"__error": str(e)}
     return await loop.run_in_executor(None, _rdns)
 
-def _extract_vcard_fields(vcard_array):
+async def _extract_vcard_fields(vcard_array):
     out = {"fn": None, "emails": [], "tels": [], "addrs": [], "org": None, "title": None}
     try:
         items = vcard_array[1]
@@ -623,7 +623,7 @@ def _extract_vcard_fields(vcard_array):
         pass
     return out
 
-def _format_event_list(events):
+async def _format_event_list(events):
     rows = []
     for ev in events or []:
         action = ev.get("eventAction") or ev.get("event")
@@ -637,11 +637,11 @@ def _format_event_list(events):
         rows.append(f"  • {action or 'event'} — {date or '—'}")
     return "\n".join(rows)
 
-def format_rdap_text(rdap: dict, ip: str) -> str:
+async def format_rdap_text(rdap: dict, ip: str) -> str:
     if not rdap:
         return "RDAP: пустой ответ."
     net = rdap.get("network") or rdap
-    def safe_get(d, *keys):
+    async def safe_get(d, *keys):
         for k in keys:
             v = d.get(k)
             if v:
@@ -805,7 +805,7 @@ async def is_allowed_user(user_id: int) -> bool:
 async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
@@ -867,7 +867,7 @@ def is_allowed_user(user_id: int) -> bool:
             geo_task = asyncio.create_task(fetch_json(session, f"http://ip-api.com/json/{ip}"))
             rdap_task = asyncio.create_task(fetch_json(session, f"https://rdap.org/ip/{ip}"))
             loop = asyncio.get_event_loop()
-            def _rdns():
+            async def _rdns():
                 try:
                     host, aliases, _ = socket.gethostbyaddr(ip)
                     return {"host": host, "aliases": aliases}
@@ -909,12 +909,12 @@ def is_allowed_user(user_id: int) -> bool:
         return
 
 # ===================== Helper: chunking =====================
-def chunk_text(text: str, n: int = TG_CHUNK):
+async def chunk_text(text: str, n: int = TG_CHUNK):
     for i in range(0, len(text), n):
         yield text[i:i+n]
 
 # ===================== Utility: IP/email checks =====================
-def looks_like_ip(s: str) -> bool:
+async def looks_like_ip(s: str) -> bool:
     s = s.strip()
     ipv4_re = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
     if ipv4_re.match(s):
@@ -929,7 +929,7 @@ def looks_like_ip(s: str) -> bool:
     return False
 
 # ===================== Management commands =====================
-def parse_id_arg(arg: str) -> Optional[int]:
+async def parse_id_arg(arg: str) -> Optional[int]:
     try:
         return int(arg.strip())
     except Exception:
@@ -938,7 +938,7 @@ def parse_id_arg(arg: str) -> Optional[int]:
 async def whoami_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
@@ -949,7 +949,7 @@ def is_allowed_user(user_id: int) -> bool:
 async def list_auth_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
@@ -966,7 +966,7 @@ def is_allowed_user(user_id: int) -> bool:
 async def allow_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
@@ -991,7 +991,7 @@ def is_allowed_user(user_id: int) -> bool:
 async def allow_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
@@ -1016,7 +1016,7 @@ def is_allowed_user(user_id: int) -> bool:
 async def admin_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
@@ -1041,7 +1041,7 @@ def is_allowed_user(user_id: int) -> bool:
 async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
 
-def is_allowed_user(user_id: int) -> bool:
+async def is_allowed_user(user_id: int) -> bool:
     return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
 
 
