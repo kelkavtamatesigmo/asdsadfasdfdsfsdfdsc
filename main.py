@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Main OSINT Telegram bot
+Main OSINT Telegram bot (Render-safe, polling + Flask keepalive)
+This file consolidates the user's original functionality with minimal fixes:
+- Persist auth.json in /var/data/auth.json (Render persistent disk)
+- Register admin commands: /list_auth, /allow_add, /allow_remove, /admin_add, /admin_remove
+- Keep original logic/structure/texts intact otherwise
 """
 import requests
 import threading
@@ -30,7 +34,6 @@ from telegram.ext import (
     filters,
     ContextTypes,
 )
-
 from lxml import html as lxml_html
 
 # Try to use uvloop for better performance (optional)
@@ -44,7 +47,8 @@ except Exception:
 BOT_TOKEN = "7125428476:AAE2HdZkvmka_-fC-haCVvgGOeM7oSkQJtQ"
 OWNER_ID = 7405715334
 
-AUTH_FILE = "auth.json"
+# Render.com persistent path
+AUTH_FILE = os.environ.get("AUTH_FILE", "/var/data/auth.json")
 HEADERS = {"User-Agent": "Public-OSINT-Bot/1.0 (+https://example.com)"}
 TG_CHUNK = 3900
 
@@ -56,61 +60,48 @@ MAX_CONCURRENCY = 6
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-# ===================== Файловая auth логика =====================
-import io
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
-
-FILE_ID = "1MD9yrr7z73QOrQKbXdjKAn0O6rL6WjOG"
-SERVICE_ACCOUNT_INFO = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-
-credentials = service_account.Credentials.from_service_account_info(
-    SERVICE_ACCOUNT_INFO, scopes=SCOPES
-)
-drive_service = build("drive", "v3", credentials=credentials)
-
+# ===================== Файловая auth логика (Render-safe) =====================
 def load_auth() -> Dict[str, Any]:
+    # Ensure directory exists (Render persistent disk)
     try:
-        request = drive_service.files().get_media(fileId=FILE_ID)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        fh.seek(0)
-        data = json.load(fh)
-    except Exception as e:
-        logger.exception("Ошибка загрузки auth.json с Google Drive: %s", e)
+        os.makedirs(os.path.dirname(AUTH_FILE), exist_ok=True)
+    except Exception:
+        pass
+
+    if os.path.exists(AUTH_FILE):
+        try:
+            with open(AUTH_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+    else:
         data = {}
     data.setdefault("owner", OWNER_ID)
     data.setdefault("admins", [])
     data.setdefault("allowed_users", [])
-    if data.get("owner") != OWNER_ID:
+    if OWNER_ID is not None and data.get("owner") != OWNER_ID:
         data["owner"] = OWNER_ID
     save_auth(data)
     return data
 
-async def save_auth(data: Dict[str, Any]) -> None:
+def save_auth(data: Dict[str, Any]) -> None:
     try:
-        tmp_path = "/tmp/auth.json"
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        os.makedirs(os.path.dirname(AUTH_FILE), exist_ok=True)
+        tmp_file = AUTH_FILE + ".tmp"
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        media = MediaFileUpload(tmp_path, mimetype="application/json", resumable=True)
-        drive_service.files().update(fileId=FILE_ID, media_body=media).execute()
-        logger.info("auth.json успешно обновлён на Google Drive.")
+        os.replace(tmp_file, AUTH_FILE)
+        logger.info(f"Auth data saved to {AUTH_FILE}")
     except Exception as e:
-        logger.exception("Ошибка при сохранении auth.json на Google Drive: %s", e)
+        logger.exception("Failed to save auth: %s", e)
 
-
-async def is_owner(user_id: int, auth: Dict[str, Any]) -> bool:
+def is_owner(user_id: int, auth: Dict[str, Any]) -> bool:
     return auth.get("owner") is not None and user_id == auth.get("owner")
 
-async def is_admin(user_id: int, auth: Dict[str, Any]) -> bool:
+def is_admin(user_id: int, auth: Dict[str, Any]) -> bool:
     return user_id in auth.get("admins", []) or is_owner(user_id, auth)
 
-async def is_allowed(user_id: int, auth: Dict[str, Any]) -> bool:
+def is_allowed(user_id: int, auth: Dict[str, Any]) -> bool:
     if is_owner(user_id, auth) or is_admin(user_id, auth):
         return True
     return user_id in auth.get("allowed_users", [])
@@ -180,7 +171,7 @@ SITE_TEMPLATES = [
 
 # ===================== VK identifier utils =====================
 VK_URL_RE = re.compile(r"(?:https?://)?(?:www\.)?vk\.com/(id\d+|[A-Za-z0-9_.]+)(?:[/?#].*)?$", re.IGNORECASE)
-async def normalize_vk_identifier(s: str) -> Optional[str]:
+def normalize_vk_identifier(s: str) -> Optional[str]:
     s = s.strip()
     m = VK_URL_RE.match(s)
     if m:
@@ -199,7 +190,7 @@ async def wayback_cdx_lookup(session: aiohttp.ClientSession, target: str, limit:
 # ===================== DuckDuckGo HTML search =====================
 DUCK_HTML = "https://html.duckduckgo.com/html/"
 
-async def _decode_uddg(href: str) -> str:
+def _decode_uddg(href: str) -> str:
     try:
         qs = parse_qs(urlparse(href).query)
         if "uddg" in qs and len(qs["uddg"]) > 0:
@@ -238,10 +229,10 @@ async def ddg_search(session: aiohttp.ClientSession, query: str, max_results: in
 
 # ===================== Email OSINT =====================
 EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
-async def looks_like_email(s: str) -> bool:
+def looks_like_email(s: str) -> bool:
     return bool(EMAIL_RE.match(s.strip()))
 
-async def email_domain(email: str) -> Optional[str]:
+def email_domain(email: str) -> Optional[str]:
     try:
         return email.split("@", 1)[1].lower().strip()
     except Exception:
@@ -280,7 +271,7 @@ async def email_pastes(session: aiohttp.ClientSession, email: str, max_results: 
     q = f"\"{email}\" pastebin OR ghostbin OR hastebin OR throwbin OR dpaste OR paste2"
     return await ddg_search(session, q, max_results=max_results)
 
-async def compact_details(d: Dict[str, Any], keys: List[str], prefix: str = "") -> List[str]:
+def compact_details(d: Dict[str, Any], keys: List[str], prefix: str = "") -> List[str]:
     lines = []
     for k in keys:
         v = d.get(k)
@@ -443,7 +434,7 @@ async def vk_history_aggregate(raw_identifier: str) -> str:
                 cnt = len(rows)
                 first_ts = rows[0][0]
                 last_ts = rows[-1][0]
-                async def ts_to_date(ts: str) -> str:
+                def ts_to_date(ts: str) -> str:
                     try:
                         dt = datetime.datetime.strptime(ts, "%Y%m%d%H%M%S")
                         return dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -588,7 +579,7 @@ async def ip_rdap_raw(ip: str) -> dict:
 
 async def reverse_dns(ip: str) -> dict:
     loop = asyncio.get_event_loop()
-    async def _rdns():
+    def _rdns():
         try:
             host, aliases, _ = socket.gethostbyaddr(ip)
             return {"host": host, "aliases": aliases}
@@ -596,7 +587,7 @@ async def reverse_dns(ip: str) -> dict:
             return {"__error": str(e)}
     return await loop.run_in_executor(None, _rdns)
 
-async def _extract_vcard_fields(vcard_array):
+def _extract_vcard_fields(vcard_array):
     out = {"fn": None, "emails": [], "tels": [], "addrs": [], "org": None, "title": None}
     try:
         items = vcard_array[1]
@@ -623,7 +614,7 @@ async def _extract_vcard_fields(vcard_array):
         pass
     return out
 
-async def _format_event_list(events):
+def _format_event_list(events):
     rows = []
     for ev in events or []:
         action = ev.get("eventAction") or ev.get("event")
@@ -637,11 +628,11 @@ async def _format_event_list(events):
         rows.append(f"  • {action or 'event'} — {date or '—'}")
     return "\n".join(rows)
 
-async def format_rdap_text(rdap: dict, ip: str) -> str:
+def format_rdap_text(rdap: dict, ip: str) -> str:
     if not rdap:
         return "RDAP: пустой ответ."
     net = rdap.get("network") or rdap
-    async def safe_get(d, *keys):
+    def safe_get(d, *keys):
         for k in keys:
             v = d.get(k)
             if v:
@@ -744,11 +735,6 @@ pending_actions: Dict[int, str] = {}  # chat_id -> "username" | "ip" | "email" |
 # ===================== Handlers =====================
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     intro = ("Тишина сети обманчива. Под поверхностью всегда остаются следы — старые профили, "
              "забытые комментарии, обрывки данных. Мы не ломаем двери — мы читаем витражи прошлого "
@@ -772,11 +758,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 async def btn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
@@ -804,11 +785,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     cid = update.effective_chat.id
     text = (update.message.text or "").strip()
@@ -831,7 +807,11 @@ async def is_allowed_user(user_id: int) -> bool:
         if len(text) == 0:
             await update.message.reply_text("Пустой ник — отправь ник/имя.")
             return
-        await update.message.chat.send_action("typing")
+        # сохраним исходную логику отправки "typing"
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception:
+            pass
         res = await aggregate_user_search(text)
         for chunk in [res[i:i+TG_CHUNK] for i in range(0, len(res), TG_CHUNK)]:
             await update.message.reply_text(chunk)
@@ -842,7 +822,10 @@ async def is_allowed_user(user_id: int) -> bool:
         if not looks_like_email(text):
             await update.message.reply_text("Похоже, это не email. Отправь корректный адрес (пример: name@example.com).")
             return
-        await update.message.chat.send_action("typing")
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception:
+            pass
         out = await aggregate_email_search(text)
         for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
@@ -850,7 +833,10 @@ async def is_allowed_user(user_id: int) -> bool:
 
     if action == "vk":
         pending_actions.pop(cid, None)
-        await update.message.chat.send_action("typing")
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception:
+            pass
         out = await vk_history_aggregate(text)
         for chunk in [out[i:i+TG_CHUNK] for i in range(0, len(out), TG_CHUNK)]:
             await update.message.reply_text(chunk)
@@ -862,12 +848,15 @@ async def is_allowed_user(user_id: int) -> bool:
             await update.message.reply_text("Похоже, это не IP. Отправь корректный IPv4/IPv6 (пример: 8.8.8.8).")
             return
         ip = text
-        await update.message.chat.send_action("typing")
+        try:
+            await update.message.chat.send_action("typing")
+        except Exception:
+            pass
         async with aiohttp.ClientSession(timeout=CONNECT_TIMEOUT, headers=HEADERS) as session:
             geo_task = asyncio.create_task(fetch_json(session, f"http://ip-api.com/json/{ip}"))
             rdap_task = asyncio.create_task(fetch_json(session, f"https://rdap.org/ip/{ip}"))
             loop = asyncio.get_event_loop()
-            async def _rdns():
+            def _rdns():
                 try:
                     host, aliases, _ = socket.gethostbyaddr(ip)
                     return {"host": host, "aliases": aliases}
@@ -909,12 +898,12 @@ async def is_allowed_user(user_id: int) -> bool:
         return
 
 # ===================== Helper: chunking =====================
-async def chunk_text(text: str, n: int = TG_CHUNK):
+def chunk_text(text: str, n: int = TG_CHUNK):
     for i in range(0, len(text), n):
         yield text[i:i+n]
 
 # ===================== Utility: IP/email checks =====================
-async def looks_like_ip(s: str) -> bool:
+def looks_like_ip(s: str) -> bool:
     s = s.strip()
     ipv4_re = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
     if ipv4_re.match(s):
@@ -929,7 +918,7 @@ async def looks_like_ip(s: str) -> bool:
     return False
 
 # ===================== Management commands =====================
-async def parse_id_arg(arg: str) -> Optional[int]:
+def parse_id_arg(arg: str) -> Optional[int]:
     try:
         return int(arg.strip())
     except Exception:
@@ -937,22 +926,12 @@ async def parse_id_arg(arg: str) -> Optional[int]:
 
 async def whoami_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     role = "owner" if is_owner(uid, auth) else ("admin" if is_admin(uid, auth) else ("allowed" if uid in auth.get("allowed_users", []) else "none"))
     await update.message.reply_text(f"Ваш Telegram ID: {uid}\nРоль: {role}")
 
 async def list_auth_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     if not is_admin(uid, auth):
         await update.message.reply_text("Только owner/admin может просматривать список авторизаций.")
@@ -965,11 +944,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 async def allow_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     if not is_admin(uid, auth):
         await update.message.reply_text("Только owner/admin может добавлять разрешённых пользователей.")
@@ -990,11 +964,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 async def allow_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     if not is_admin(uid, auth):
         await update.message.reply_text("Только owner/admin может удалять разрешённых пользователей.")
@@ -1015,11 +984,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 async def admin_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     if not is_owner(uid, auth):
         await update.message.reply_text("Только owner может добавлять админов.")
@@ -1040,11 +1004,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
-
-async def is_allowed_user(user_id: int) -> bool:
-    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
-
-
     uid = update.effective_user.id
     if not is_owner(uid, auth):
         await update.message.reply_text("Только owner может удалять админов.")
@@ -1065,8 +1024,6 @@ async def is_allowed_user(user_id: int) -> bool:
 
 # ===================== Main (polling + Flask keepalive) =====================
 
-
-
 # === Flask-заглушка для аптайма ===
 app = Flask(__name__)
 
@@ -1074,31 +1031,28 @@ app = Flask(__name__)
 def index():
     return "✅ Telegram OSINT bot is alive (polling mode)", 200
 
-
 # === Создаём Telegram Application ===
 application = Application.builder().token(BOT_TOKEN).build()
 application.add_handler(CommandHandler("start", start_cmd))
 application.add_handler(CommandHandler("whoami", whoami_cmd))
+
+# зарегистрируем команды авторизации
+application.add_handler(CommandHandler("list_auth", list_auth_cmd))
+application.add_handler(CommandHandler("allow_add", allow_add_cmd))
+application.add_handler(CommandHandler("allow_remove", allow_remove_cmd))
+application.add_handler(CommandHandler("admin_add", admin_add_cmd))
+application.add_handler(CommandHandler("admin_remove", admin_remove_cmd))
+
+# основной UX
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, plain_message))
 application.add_handler(CallbackQueryHandler(btn_callback))
-
 
 # === Функция запуска Telegram-бота ===
 def run_bot():
     print("🤖 Bot started in polling mode (no webhook)")
     application.run_polling(drop_pending_updates=True)
 
-
-# === Функция запуска Flask-заглушки ===
-def run_flask():
-    print("🌐 Flask keepalive running on Render")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
-
-
-# === Точка входа ===
+# === Запуск: polling в отдельном потоке + Flask ===
 if __name__ == "__main__":
-    # Flask-заглушку запускаем в отдельном потоке
-    threading.Thread(target=run_flask, daemon=True).start()
-
-    # А в основном потоке запускаем polling
-    run_bot()
+    threading.Thread(target=run_bot, daemon=True).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
