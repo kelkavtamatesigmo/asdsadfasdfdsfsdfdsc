@@ -6,3 +6,7 @@ aiohttp==3.9.5
 lxml==5.2.1
 Flask
 requests
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib

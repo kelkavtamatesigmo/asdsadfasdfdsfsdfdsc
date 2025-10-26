@@ -57,29 +57,52 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 # ===================== Файловая auth логика =====================
+import io
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload
+
+FILE_ID = "1MD9yrr7z73QOrQKbXdjKAn0O6rL6WjOG"
+SERVICE_ACCOUNT_INFO = json.loads(os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"])
+SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+
+credentials = service_account.Credentials.from_service_account_info(
+    SERVICE_ACCOUNT_INFO, scopes=SCOPES
+)
+drive_service = build("drive", "v3", credentials=credentials)
+
 def load_auth() -> Dict[str, Any]:
-    if os.path.exists(AUTH_FILE):
-        try:
-            with open(AUTH_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
-    else:
+    try:
+        request = drive_service.files().get_media(fileId=FILE_ID)
+        fh = io.BytesIO()
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while not done:
+            _, done = downloader.next_chunk()
+        fh.seek(0)
+        data = json.load(fh)
+    except Exception as e:
+        logger.exception("Ошибка загрузки auth.json с Google Drive: %s", e)
         data = {}
     data.setdefault("owner", OWNER_ID)
     data.setdefault("admins", [])
     data.setdefault("allowed_users", [])
-    if OWNER_ID is not None and data.get("owner") != OWNER_ID:
+    if data.get("owner") != OWNER_ID:
         data["owner"] = OWNER_ID
     save_auth(data)
     return data
 
 def save_auth(data: Dict[str, Any]) -> None:
     try:
-        with open(AUTH_FILE, "w", encoding="utf-8") as f:
+        tmp_path = "/tmp/auth.json"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        media = MediaFileUpload(tmp_path, mimetype="application/json", resumable=True)
+        drive_service.files().update(fileId=FILE_ID, media_body=media).execute()
+        logger.info("auth.json успешно обновлён на Google Drive.")
     except Exception as e:
-        logger.exception("Failed to save auth: %s", e)
+        logger.exception("Ошибка при сохранении auth.json на Google Drive: %s", e)
+
 
 def is_owner(user_id: int, auth: Dict[str, Any]) -> bool:
     return auth.get("owner") is not None and user_id == auth.get("owner")
