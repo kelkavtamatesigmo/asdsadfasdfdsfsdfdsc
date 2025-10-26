@@ -1022,3 +1022,11 @@ def run_bot():
 
 
 # === Функция запуска Flask-заглушки ===
+if __name__ == "__main__":
+    # Запускаем бота в отдельном потоке
+    threading.Thread(target=run_bot, daemon=True).start()
+
+    # Запускаем Flask-заглушку, чтобы Render видел активный порт
+    port = int(os.environ.get("PORT", 10000))
+    print(f"🌐 Flask keepalive running on port {port}")
+    app.run(host="0.0.0.0", port=port)
