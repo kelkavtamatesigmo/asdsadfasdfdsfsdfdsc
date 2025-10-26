@@ -71,7 +71,7 @@ credentials = service_account.Credentials.from_service_account_info(
 )
 drive_service = build("drive", "v3", credentials=credentials)
 
-async def load_auth() -> Dict[str, Any]:
+def load_auth() -> Dict[str, Any]:
     try:
         request = drive_service.files().get_media(fileId=FILE_ID)
         fh = io.BytesIO()
