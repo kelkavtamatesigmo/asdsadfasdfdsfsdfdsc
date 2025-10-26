@@ -744,6 +744,11 @@ pending_actions: Dict[int, str] = {}  # chat_id -> "username" | "ip" | "email" |
 # ===================== Handlers =====================
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     intro = ("Тишина сети обманчива. Под поверхностью всегда остаются следы — старые профили, "
              "забытые комментарии, обрывки данных. Мы не ломаем двери — мы читаем витражи прошлого "
@@ -767,6 +772,11 @@ async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def btn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     query = update.callback_query
     await query.answer()
     uid = query.from_user.id
@@ -794,6 +804,11 @@ async def btn_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def plain_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     cid = update.effective_chat.id
     text = (update.message.text or "").strip()
@@ -922,12 +937,22 @@ def parse_id_arg(arg: str) -> Optional[int]:
 
 async def whoami_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     role = "owner" if is_owner(uid, auth) else ("admin" if is_admin(uid, auth) else ("allowed" if uid in auth.get("allowed_users", []) else "none"))
     await update.message.reply_text(f"Ваш Telegram ID: {uid}\nРоль: {role}")
 
 async def list_auth_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     if not is_admin(uid, auth):
         await update.message.reply_text("Только owner/admin может просматривать список авторизаций.")
@@ -940,6 +965,11 @@ async def list_auth_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def allow_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     if not is_admin(uid, auth):
         await update.message.reply_text("Только owner/admin может добавлять разрешённых пользователей.")
@@ -960,6 +990,11 @@ async def allow_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def allow_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     if not is_admin(uid, auth):
         await update.message.reply_text("Только owner/admin может удалять разрешённых пользователей.")
@@ -980,6 +1015,11 @@ async def allow_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     if not is_owner(uid, auth):
         await update.message.reply_text("Только owner может добавлять админов.")
@@ -1000,6 +1040,11 @@ async def admin_add_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def admin_remove_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     auth = load_auth()
+
+def is_allowed_user(user_id: int) -> bool:
+    return user_id == auth["owner"] or user_id in auth["allowed_users"] or user_id in auth["admins"]
+
+
     uid = update.effective_user.id
     if not is_owner(uid, auth):
         await update.message.reply_text("Только owner может удалять админов.")
