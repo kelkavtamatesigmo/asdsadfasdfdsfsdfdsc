@@ -1016,17 +1016,15 @@ application.add_handler(CallbackQueryHandler(btn_callback))
 
 
 # === Функция запуска Telegram-бота ===
+
+def run_flask():
+    print("🌐 Flask keepalive running on Render")
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+
 def run_bot():
     print("🤖 Bot started in polling mode (no webhook)")
     application.run_polling(drop_pending_updates=True)
 
-
-# === Функция запуска Flask-заглушки ===
 if __name__ == "__main__":
-    # Запускаем бота в отдельном потоке
-    threading.Thread(target=run_bot, daemon=True).start()
-
-    # Запускаем Flask-заглушку, чтобы Render видел активный порт
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🌐 Flask keepalive running on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    threading.Thread(target=run_flask, daemon=True).start()
+    run_bot()
